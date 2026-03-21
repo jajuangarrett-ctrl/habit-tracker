@@ -54,25 +54,25 @@ const CATEGORY_CHECK: Record<string, string> = {
   mindfulness: "bg-violet-500 dark:bg-violet-400",
 };
 
-// Storage helper — tries localStorage, falls back to in-memory
-const STORAGE_KEY = "habit-tracker-data";
 type HabitData = Record<string, boolean>; // "YYYY-MM-DD:habitKey" -> true
+
+const STORAGE_KEY = "habit-tracker-data";
 
 function loadData(): HabitData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = window["localStorage"]?.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch {
-    // localStorage blocked (sandboxed iframe) — use empty
+    // localStorage unavailable
   }
   return {};
 }
 
 function saveData(data: HabitData) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    window["localStorage"]?.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
-    // localStorage blocked — data lives in React state only
+    // localStorage unavailable
   }
 }
 
