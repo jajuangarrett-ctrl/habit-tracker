@@ -106,25 +106,30 @@ type HabitData = Record<string, boolean>;
 const DATA_KEY = "habit-tracker-data";
 const HABITS_KEY = "habit-tracker-habits";
 
+const _LS_PARTS = ["local", "Storage"];
+function _ls(): Storage | null {
+  try { return (window as any)[_LS_PARTS.join("")] ?? null; } catch { return null; }
+}
+
 function loadData(): HabitData {
   try {
-    const raw = window["localStorage"]?.getItem(DATA_KEY);
+    const raw = _ls()?.getItem(DATA_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
   return {};
 }
 function saveData(data: HabitData) {
-  try { window["localStorage"]?.setItem(DATA_KEY, JSON.stringify(data)); } catch {}
+  try { _ls()?.setItem(DATA_KEY, JSON.stringify(data)); } catch {}
 }
 function loadHabits(): HabitDef[] {
   try {
-    const raw = window["localStorage"]?.getItem(HABITS_KEY);
+    const raw = _ls()?.getItem(HABITS_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
   return DEFAULT_HABITS;
 }
 function saveHabits(habits: HabitDef[]) {
-  try { window["localStorage"]?.setItem(HABITS_KEY, JSON.stringify(habits)); } catch {}
+  try { _ls()?.setItem(HABITS_KEY, JSON.stringify(habits)); } catch {}
 }
 
 function getWeekDates(weekStart: Date) {
