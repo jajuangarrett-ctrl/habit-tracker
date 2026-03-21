@@ -1,7 +1,5 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { HABITS, type HabitEntry } from "@shared/schema";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { HABITS } from "@shared/schema";
 import { format, startOfWeek, addDays, isToday, isBefore, startOfDay } from "date-fns";
 import {
   HeartPulse,
@@ -15,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  X,
   Moon,
   Sun,
   RotateCcw,
@@ -57,6 +54,28 @@ const CATEGORY_CHECK: Record<string, string> = {
   mindfulness: "bg-violet-500 dark:bg-violet-400",
 };
 
+// Storage helper — tries localStorage, falls back to in-memory
+const STORAGE_KEY = "habit-tracker-data";
+type HabitData = Record<string, boolean>; // "YYYY-MM-DD:habitKey" -> true
+
+function loadData(): HabitData {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // localStorage blocked (sandboxed iframe) — use empty
+  }
+  return {};
+}
+
+function saveData(data: HabitData) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // localStorage blocked — data lives in React state only
+  }
+}
+
 function getWeekDates(weekStart: Date) {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
@@ -66,6 +85,7 @@ export default function Dashboard() {
   const [darkMode, setDarkMode] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+  const [habitData, setHabitData] = useState<HabitData>(loadData);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => {
@@ -76,57 +96,59 @@ export default function Dashboard() {
   };
 
   // Initialize dark mode on mount
-  useMemo(() => {
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, []);
+
+  // Persist data on change
+  useEffect(() => {
+    saveData(habitData);
+  }, [habitData]);
+
+  const toggleHabit = useCallback((date: string, habitKey: string) => {
+    const key = `${date}:${habitKey}`;
+    setHabitData((prev) => {
+      const next = { ...prev };
+      if (next[key]) {
+        delete next[key];
+      } else {
+        next[key] = true;
+      }
+      return next;
+    });
+  }, []);
+
+  const isCompleted = useCallback(
+    (date: string, habitKey: string) => !!habitData[`${date}:${habitKey}`],
+    [habitData]
+  );
 
   const weekStart = useMemo(
     () => addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset * 7),
     [weekOffset]
   );
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const startStr = format(weekStart, "yyyy-MM-dd");
-  const endStr = format(addDays(weekStart, 6), "yyyy-MM-dd");
-
-  const { data: entries = [] } = useQuery<HabitEntry[]>({
-    queryKey: ["/api/entries", startStr, endStr],
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/entries?start=${startStr}&end=${endStr}`);
-      return res.json();
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: async ({ date, habitKey }: { date: string; habitKey: string }) => {
-      const res = await apiRequest("POST", "/api/entries/toggle", { date, habitKey });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/entries", startStr, endStr] });
-    },
-  });
-
-  const entryMap = useMemo(() => {
-    const map = new Map<string, boolean>();
-    entries.forEach((e) => {
-      if (e.completed) map.set(`${e.date}:${e.habitKey}`, true);
-    });
-    return map;
-  }, [entries]);
-
-  const isCompleted = (date: string, habitKey: string) =>
-    entryMap.has(`${date}:${habitKey}`);
 
   // Weekly stats
   const totalPossible = 7 * HABITS.length;
-  const totalCompleted = entries.filter((e) => e.completed).length;
-  const completionRate = totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 0;
+  const totalCompleted = useMemo(() => {
+    let count = 0;
+    weekDates.forEach((d) => {
+      const dateStr = format(d, "yyyy-MM-dd");
+      HABITS.forEach((h) => {
+        if (habitData[`${dateStr}:${h.key}`]) count++;
+      });
+    });
+    return count;
+  }, [habitData, weekDates]);
+  const completionRate =
+    totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 0;
 
   // Today's stats
   const todayStr = format(new Date(), "yyyy-MM-dd");
-  const todayCompleted = entries.filter(
-    (e) => e.date === todayStr && e.completed
-  ).length;
+  const todayCompleted = useMemo(() => {
+    return HABITS.filter((h) => habitData[`${todayStr}:${h.key}`]).length;
+  }, [habitData, todayStr]);
 
   // Current streak (consecutive days with all habits completed)
   const streakCount = useMemo(() => {
@@ -135,23 +157,23 @@ export default function Dashboard() {
     for (let i = 0; i < 365; i++) {
       const d = addDays(today, -i);
       const dateStr = format(d, "yyyy-MM-dd");
-      const dayEntries = entries.filter((e) => e.date === dateStr && e.completed);
-      if (dayEntries.length === HABITS.length) {
+      const dayDone = HABITS.every((h) => habitData[`${dateStr}:${h.key}`]);
+      if (dayDone) {
         streak++;
       } else if (i > 0) {
         break;
       }
     }
     return streak;
-  }, [entries]);
+  }, [habitData]);
 
   // Day completion counts for the progress row
   const dayCompletionCounts = useMemo(() => {
     return weekDates.map((d) => {
       const dateStr = format(d, "yyyy-MM-dd");
-      return entries.filter((e) => e.date === dateStr && e.completed).length;
+      return HABITS.filter((h) => habitData[`${dateStr}:${h.key}`]).length;
     });
-  }, [entries, weekDates]);
+  }, [habitData, weekDates]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -211,7 +233,11 @@ export default function Dashboard() {
               className="h-8 w-8"
               data-testid="button-theme"
             >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {darkMode ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </Button>
           </div>
         </div>
@@ -238,7 +264,9 @@ export default function Dashboard() {
             </p>
             <p className="text-2xl font-bold tabular-nums mt-1">
               {completionRate}
-              <span className="text-sm font-normal text-muted-foreground">%</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                %
+              </span>
             </p>
           </Card>
           <Card className="p-4" data-testid="card-completed">
@@ -258,7 +286,10 @@ export default function Dashboard() {
             </p>
             <p className="text-2xl font-bold tabular-nums mt-1">
               {streakCount}
-              <span className="text-sm font-normal text-muted-foreground"> day{streakCount !== 1 ? "s" : ""}</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                {" "}
+                day{streakCount !== 1 ? "s" : ""}
+              </span>
             </p>
           </Card>
         </div>
@@ -275,7 +306,8 @@ export default function Dashboard() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <p className="text-sm font-medium text-muted-foreground">
-            {format(weekStart, "MMM d")} — {format(addDays(weekStart, 6), "MMM d, yyyy")}
+            {format(weekStart, "MMM d")} —{" "}
+            {format(addDays(weekStart, 6), "MMM d, yyyy")}
           </p>
           <Button
             variant="ghost"
@@ -336,7 +368,9 @@ export default function Dashboard() {
                   return (
                     <tr
                       key={habit.key}
-                      className={`${!isLast ? "border-b border-border/50" : ""} group`}
+                      className={`${
+                        !isLast ? "border-b border-border/50" : ""
+                      } group`}
                       data-testid={`row-habit-${habit.key}`}
                     >
                       <td className="py-2.5 px-4">
@@ -359,11 +393,6 @@ export default function Dashboard() {
                         const dateStr = format(d, "yyyy-MM-dd");
                         const done = isCompleted(dateStr, habit.key);
                         const today = isToday(d);
-                        const past = isBefore(d, startOfDay(new Date()));
-
-                        // For doom scroll: completed = bad (red X), not completed = good (green check)
-                        // Wait, the user wants to track "1 session of doom scrolling" — so checking it means they kept it to 1 session
-                        // Let's keep it consistent: checked = did it / met the goal
 
                         return (
                           <td
@@ -373,13 +402,7 @@ export default function Dashboard() {
                             }`}
                           >
                             <button
-                              onClick={() =>
-                                toggleMutation.mutate({
-                                  date: dateStr,
-                                  habitKey: habit.key,
-                                })
-                              }
-                              disabled={toggleMutation.isPending}
+                              onClick={() => toggleHabit(dateStr, habit.key)}
                               className={`w-8 h-8 rounded-lg mx-auto flex items-center justify-center transition-all duration-150 ${
                                 done
                                   ? isDoomScroll
