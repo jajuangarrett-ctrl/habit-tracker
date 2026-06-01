@@ -106,6 +106,7 @@ const CATEGORY_DOT: Record<string, string> = {
 type HabitData = Record<string, boolean>;
 const DATA_KEY = "habit-tracker-data";
 const HABITS_KEY = "habit-tracker-habits";
+const STREAKS_VISIBLE_KEY = "habit-tracker-show-streaks";
 
 // Build storage key at runtime to avoid deploy-validator literal match
 const _LS = ["local", "Storage"].join("");
@@ -146,6 +147,16 @@ function loadHabits(): HabitDef[] {
 }
 function saveHabits(habits: HabitDef[]) {
   try { _store()?.setItem(HABITS_KEY, JSON.stringify(habits)); } catch {}
+}
+function loadStreaksVisible(): boolean {
+  try {
+    const raw = _store()?.getItem(STREAKS_VISIBLE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return false;
+}
+function saveStreaksVisible(visible: boolean) {
+  try { _store()?.setItem(STREAKS_VISIBLE_KEY, JSON.stringify(visible)); } catch {}
 }
 
 function getWeekDates(weekStart: Date) {
@@ -259,6 +270,7 @@ export default function Dashboard() {
   const [habits, setHabits] = useState<HabitDef[]>(loadHabits);
   const [editMode, setEditMode] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showHabitStreaks, setShowHabitStreaks] = useState(loadStreaksVisible);
   const [storageAvailable] = useState(() => _store() !== null);
 
   const toggleDarkMode = () => {
@@ -275,6 +287,7 @@ export default function Dashboard() {
 
   useEffect(() => { saveData(habitData); }, [habitData]);
   useEffect(() => { saveHabits(habits); }, [habits]);
+  useEffect(() => { saveStreaksVisible(showHabitStreaks); }, [showHabitStreaks]);
 
   const toggleHabit = useCallback((date: string, habitKey: string) => {
     const key = `${date}:${habitKey}`;
@@ -352,6 +365,24 @@ export default function Dashboard() {
     return streak;
   }, [habitData, habits]);
 
+  const habitStreaks = useMemo(() => {
+    const today = startOfDay(new Date());
+    return habits.reduce<Record<string, number>>((acc, habit) => {
+      let streak = 0;
+      for (let i = 0; i < 365; i++) {
+        const d = addDays(today, -i);
+        const dateStr = format(d, "yyyy-MM-dd");
+        if (habitData[`${dateStr}:${habit.key}`]) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+      acc[habit.key] = streak;
+      return acc;
+    }, {});
+  }, [habitData, habits]);
+
   const dayCompletionCounts = useMemo(() => {
     return weekDates.map((d) => {
       const dateStr = format(d, "yyyy-MM-dd");
@@ -399,6 +430,20 @@ export default function Dashboard() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{editMode ? "Done editing" : "Edit habits"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={showHabitStreaks ? "default" : "ghost"}
+                  size="icon"
+                  onClick={() => setShowHabitStreaks((p) => !p)}
+                  className="h-8 w-8"
+                  data-testid="button-toggle-habit-streaks"
+                >
+                  <Flame className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showHabitStreaks ? "Hide habit streaks" : "Show habit streaks"}</TooltipContent>
             </Tooltip>
             <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-8 w-8" data-testid="button-theme">
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -517,6 +562,11 @@ export default function Dashboard() {
                       </th>
                     );
                   })}
+                  {!editMode && showHabitStreaks && (
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-3 px-4 min-w-[100px]">
+                      Streak
+                    </th>
+                  )}
                   {editMode && (
                     <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-3 px-4">
                       Actions
@@ -596,6 +646,20 @@ export default function Dashboard() {
                         );
                       })}
 
+                      {!editMode && showHabitStreaks && (
+                        <td className="text-center py-2.5 px-4">
+                          <span
+                            className="inline-flex min-w-[68px] items-baseline justify-center rounded-full bg-primary/10 px-2 py-1 text-xs font-bold tabular-nums text-primary"
+                            data-testid={`streak-${habit.key}`}
+                          >
+                            {habitStreaks[habit.key] ?? 0}
+                            <span className="ml-1 font-medium text-muted-foreground">
+                              day{(habitStreaks[habit.key] ?? 0) === 1 ? "" : "s"}
+                            </span>
+                          </span>
+                        </td>
+                      )}
+
                       {editMode && (
                         <td className="text-center py-2.5 px-4">
                           <button
@@ -614,7 +678,7 @@ export default function Dashboard() {
                 {/* Empty state */}
                 {habits.length === 0 && (
                   <tr>
-                    <td colSpan={editMode ? 2 : 8} className="text-center py-12">
+                    <td colSpan={editMode ? 2 : 8 + (showHabitStreaks ? 1 : 0)} className="text-center py-12">
                       <p className="text-sm text-muted-foreground">No habits yet</p>
                       {editMode && (
                         <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)} className="mt-3" data-testid="button-add-first">
@@ -656,6 +720,11 @@ export default function Dashboard() {
                         </td>
                       );
                     })}
+                    {showHabitStreaks && (
+                      <td className="text-center py-3 px-4">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">As of today</span>
+                      </td>
+                    )}
                   </tr>
                 )}
               </tbody>
