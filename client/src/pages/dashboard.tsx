@@ -41,7 +41,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   "heart-pulse": HeartPulse,
@@ -562,11 +561,6 @@ export default function Dashboard() {
                       </th>
                     );
                   })}
-                  {!editMode && showHabitStreaks && (
-                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-3 px-4 min-w-[100px]">
-                      Streak
-                    </th>
-                  )}
                   {editMode && (
                     <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-3 px-4">
                       Actions
@@ -613,7 +607,20 @@ export default function Dashboard() {
                           <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${catBg}`}>
                             {Icon && <Icon className={`h-3.5 w-3.5 ${catColor}`} />}
                           </div>
-                          <span className="text-sm font-medium whitespace-nowrap">{habit.label}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="text-sm font-medium whitespace-nowrap">{habit.label}</span>
+                            {!editMode && showHabitStreaks && (
+                              <span
+                                className="inline-flex shrink-0 items-baseline rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary"
+                                data-testid={`streak-${habit.key}`}
+                              >
+                                {habitStreaks[habit.key] ?? 0}
+                                <span className="ml-1 font-medium text-muted-foreground">
+                                  day{(habitStreaks[habit.key] ?? 0) === 1 ? "" : "s"}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
@@ -646,20 +653,6 @@ export default function Dashboard() {
                         );
                       })}
 
-                      {!editMode && showHabitStreaks && (
-                        <td className="text-center py-2.5 px-4">
-                          <span
-                            className="inline-flex min-w-[68px] items-baseline justify-center rounded-full bg-primary/10 px-2 py-1 text-xs font-bold tabular-nums text-primary"
-                            data-testid={`streak-${habit.key}`}
-                          >
-                            {habitStreaks[habit.key] ?? 0}
-                            <span className="ml-1 font-medium text-muted-foreground">
-                              day{(habitStreaks[habit.key] ?? 0) === 1 ? "" : "s"}
-                            </span>
-                          </span>
-                        </td>
-                      )}
-
                       {editMode && (
                         <td className="text-center py-2.5 px-4">
                           <button
@@ -678,7 +671,7 @@ export default function Dashboard() {
                 {/* Empty state */}
                 {habits.length === 0 && (
                   <tr>
-                    <td colSpan={editMode ? 2 : 8 + (showHabitStreaks ? 1 : 0)} className="text-center py-12">
+                    <td colSpan={editMode ? 2 : 8} className="text-center py-12">
                       <p className="text-sm text-muted-foreground">No habits yet</p>
                       {editMode && (
                         <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)} className="mt-3" data-testid="button-add-first">
@@ -720,11 +713,6 @@ export default function Dashboard() {
                         </td>
                       );
                     })}
-                    {showHabitStreaks && (
-                      <td className="text-center py-3 px-4">
-                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">As of today</span>
-                      </td>
-                    )}
                   </tr>
                 )}
               </tbody>
@@ -744,10 +732,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Footer */}
-        <footer className="text-center py-4 border-t border-border mt-8">
-          <PerplexityAttribution />
-        </footer>
       </main>
     </div>
   );
